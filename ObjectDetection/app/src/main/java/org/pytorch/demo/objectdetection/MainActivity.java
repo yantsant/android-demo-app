@@ -3,25 +3,27 @@
 //
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
-
 package org.pytorch.demo.objectdetection;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
@@ -33,8 +35,14 @@ import org.pytorch.IValue;
 import org.pytorch.LiteModuleLoader;
 import org.pytorch.Module;
 import org.pytorch.Tensor;
+import org.pytorch.demo.objectdetection.ObjectDetectionActivity;
+import org.pytorch.demo.objectdetection.PrePostProcessor;
+import org.pytorch.demo.objectdetection.R;
+import org.pytorch.demo.objectdetection.ResultView;
 import org.pytorch.torchvision.TensorImageUtils;
 
+ import java.util.Date;
+import java.text.SimpleDateFormat;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -47,7 +55,15 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements Runnable {
     private int mImageIndex = 0;
-    private String[] mTestImages = {"test1.png", "test2.jpg", "test3.png"};
+    String mBufferImageName = "buffer_image";
+    File mPicPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+    File mPicDirectory = new File(mPicPath, "MahjongDetector/");
+    File mPicDirectoryPath;// = new File(mPicPath, "MahjongDetector/");
+    static final int REQUEST_IMAGE_CAPTURE = 0;
+    File mPicPathApp = new File(mPicPath, "MahjongDetector/" + mBufferImageName);
+    String mCurrentPhotoPath;
+
+    private String[] mTestImages = {"00001.jpg", "00002.jpg", "00003.jpg", "00004.jpg", "00005.jpg", "00006.jpg", "00007.jpg"};
 
     private ImageView mImageView;
     private ResultView mResultView;
@@ -75,6 +91,69 @@ public class MainActivity extends AppCompatActivity implements Runnable {
             return file.getAbsolutePath();
         }
     }
+    private File createImageFile() throws IOException {
+        // Create an image file name
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        //String imageFileName = "JPEG_" + timeStamp + "_";
+        File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
+        File image = File.createTempFile(
+                mBufferImageName,  /* prefix */
+                ".jpg",   /* suffix */
+                storageDir      /* directory */
+        );
+
+        // Save a file: path for use with ACTION_VIEW intents
+        mCurrentPhotoPath = image.getAbsolutePath();
+        return image;
+    }
+    private void galleryAddPic() {
+        Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+        File f = new File(mCurrentPhotoPath);
+        Uri contentUri = Uri.fromFile(f);
+        mediaScanIntent.setData(contentUri);
+        this.sendBroadcast(mediaScanIntent);
+    }
+
+    private void dispatchTakePictureIntent() {
+        Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        // Ensure that there's a camera activity to handle the intent
+        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+            // Create the File where the photo should go
+            File photoFile = null;
+            try {
+                photoFile = createImageFile();
+            } catch (IOException ex) {
+                int REQUEST_IMAGE = 0;
+                // Error occurred while creating the File
+            }
+            // Continue only if the File was successfully created
+            if (photoFile != null) {
+                Uri photoURI = FileProvider.getUriForFile(this,
+                        "com.example.android.fileprovider",
+                        photoFile);
+                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
+                startActivityForResult(takePictureIntent, REQUEST_IMAGE_CAPTURE);
+            }
+        }
+    }
+
+    void callDetection(){
+        mButtonDetect.setEnabled(false);
+        mProgressBar.setVisibility(ProgressBar.VISIBLE);
+        mButtonDetect.setText(getString(R.string.run_model));
+
+        mImgScaleX = (float)mBitmap.getWidth() / PrePostProcessor.mInputWidth;
+        mImgScaleY = (float)mBitmap.getHeight() / PrePostProcessor.mInputHeight;
+
+        mIvScaleX = (mBitmap.getWidth() > mBitmap.getHeight() ? (float)mImageView.getWidth() / mBitmap.getWidth() : (float)mImageView.getHeight() / mBitmap.getHeight());
+        mIvScaleY  = (mBitmap.getHeight() > mBitmap.getWidth() ? (float)mImageView.getHeight() / mBitmap.getHeight() : (float)mImageView.getWidth() / mBitmap.getWidth());
+
+        mStartX = (mImageView.getWidth() - mIvScaleX * mBitmap.getWidth())/2;
+        mStartY = (mImageView.getHeight() -  mIvScaleY * mBitmap.getHeight())/2;
+
+        Thread thread = new Thread(MainActivity.this);
+        thread.start();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -92,6 +171,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
 
         try {
             mBitmap = BitmapFactory.decodeStream(getAssets().open(mTestImages[mImageIndex]));
+            mPicDirectory.mkdirs();
         } catch (IOException e) {
             Log.e("Object Detection", "Error reading assets", e);
             finish();
@@ -102,8 +182,9 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         mResultView = findViewById(R.id.resultView);
         mResultView.setVisibility(View.INVISIBLE);
 
+// TEST button
         final Button buttonTest = findViewById(R.id.testButton);
-        buttonTest.setText(("Test Image 1/3"));
+        buttonTest.setText(("Test Image 1/7"));
         buttonTest.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 mResultView.setVisibility(View.INVISIBLE);
@@ -113,6 +194,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
                 try {
                     mBitmap = BitmapFactory.decodeStream(getAssets().open(mTestImages[mImageIndex]));
                     mImageView.setImageBitmap(mBitmap);
+
                 } catch (IOException e) {
                     Log.e("Object Detection", "Error reading assets", e);
                     finish();
@@ -120,7 +202,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
             }
         });
 
-
+// SELECT button
         final Button buttonSelect = findViewById(R.id.selectButton);
         buttonSelect.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -134,22 +216,29 @@ public class MainActivity extends AppCompatActivity implements Runnable {
                     @Override
                     public void onClick(DialogInterface dialog, int item) {
                         if (options[item].equals("Take Picture")) {
-                            Intent takePicture = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
-                            startActivityForResult(takePicture, 0);
+                            dispatchTakePictureIntent();
+                            //Intent takePicture = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+                            //startActivityForResult(takePicture, REQUEST_IMAGE_CAPTURE);
+                            //saveToFile( BitmapFactory.decodeFile(android.provider.MediaStore.ACTION_IMAGE_CAPTURE));
                         }
                         else if (options[item].equals("Choose from Photos")) {
-                            Intent pickPhoto = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.INTERNAL_CONTENT_URI);
-                            startActivityForResult(pickPhoto , 1);
+                            //Intent pickPhoto = new Intent(Intent.ACTION_PICK, android.provider.MediaStore.Images.Media.INTERNAL_CONTENT_URI);
+                            //startActivityForResult(pickPhoto , 1);
                         }
                         else if (options[item].equals("Cancel")) {
                             dialog.dismiss();
                         }
                     }
                 });
+
                 builder.show();
             }
         });
 
+
+
+        ;
+// LIVE button
         final Button buttonLive = findViewById(R.id.liveButton);
         buttonLive.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -157,31 +246,17 @@ public class MainActivity extends AppCompatActivity implements Runnable {
               startActivity(intent);
             }
         });
-
         mButtonDetect = findViewById(R.id.detectButton);
         mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
+// DETECT button
         mButtonDetect.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                mButtonDetect.setEnabled(false);
-                mProgressBar.setVisibility(ProgressBar.VISIBLE);
-                mButtonDetect.setText(getString(R.string.run_model));
-
-                mImgScaleX = (float)mBitmap.getWidth() / PrePostProcessor.mInputWidth;
-                mImgScaleY = (float)mBitmap.getHeight() / PrePostProcessor.mInputHeight;
-
-                mIvScaleX = (mBitmap.getWidth() > mBitmap.getHeight() ? (float)mImageView.getWidth() / mBitmap.getWidth() : (float)mImageView.getHeight() / mBitmap.getHeight());
-                mIvScaleY  = (mBitmap.getHeight() > mBitmap.getWidth() ? (float)mImageView.getHeight() / mBitmap.getHeight() : (float)mImageView.getWidth() / mBitmap.getWidth());
-
-                mStartX = (mImageView.getWidth() - mIvScaleX * mBitmap.getWidth())/2;
-                mStartY = (mImageView.getHeight() -  mIvScaleY * mBitmap.getHeight())/2;
-
-                Thread thread = new Thread(MainActivity.this);
-                thread.start();
+                callDetection();
             }
         });
 
         try {
-            mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "yolov5s.torchscript.ptl"));
+            mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "best.torchscript.ptl"));
             BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open("classes.txt")));
             String line;
             List<String> classes = new ArrayList<>();
@@ -203,11 +278,15 @@ public class MainActivity extends AppCompatActivity implements Runnable {
             switch (requestCode) {
                 case 0:
                     if (resultCode == RESULT_OK && data != null) {
-                        mBitmap = (Bitmap) data.getExtras().get("data");
+                        mBitmap = BitmapFactory.decodeFile(mCurrentPhotoPath);
+                        mImageView.setImageBitmap(mBitmap);
+                        //saveToFile(mBitmap);
                         Matrix matrix = new Matrix();
                         matrix.postRotate(90.0f);
                         mBitmap = Bitmap.createBitmap(mBitmap, 0, 0, mBitmap.getWidth(), mBitmap.getHeight(), matrix, true);
+
                         mImageView.setImageBitmap(mBitmap);
+                        callDetection();
                     }
                     break;
                 case 1:
@@ -222,9 +301,11 @@ public class MainActivity extends AppCompatActivity implements Runnable {
                                 int columnIndex = cursor.getColumnIndex(filePathColumn[0]);
                                 String picturePath = cursor.getString(columnIndex);
                                 mBitmap = BitmapFactory.decodeFile(picturePath);
+                                //saveToFile(mBitmap);
                                 Matrix matrix = new Matrix();
                                 matrix.postRotate(90.0f);
                                 mBitmap = Bitmap.createBitmap(mBitmap, 0, 0, mBitmap.getWidth(), mBitmap.getHeight(), matrix, true);
+
                                 mImageView.setImageBitmap(mBitmap);
                                 cursor.close();
                             }
@@ -254,3 +335,19 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         });
     }
 }
+
+
+
+/*
+    private void saveToFile(Bitmap bmp) {
+       // File path = Environment.getExternalStoragePublicDirectory(
+        //        Environment.DIRECTORY_PICTURES);
+      //  File file = new File(path, "/" + filename);
+
+        try (FileOutputStream out = new FileOutputStream(mPicPathApp)) {
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, out); // bmp is your Bitmap instance
+            // PNG is a lossless format, the compression factor (100) is ignored
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }*/

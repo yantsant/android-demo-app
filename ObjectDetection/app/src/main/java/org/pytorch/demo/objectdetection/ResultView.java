@@ -20,10 +20,10 @@ import java.util.ArrayList;
 
 public class ResultView extends View {
 
-    private final static int TEXT_X = 40;
-    private final static int TEXT_Y = 35;
-    private final static int TEXT_WIDTH = 260;
-    private final static int TEXT_HEIGHT = 50;
+    private final static int TEXT_X = 0;
+    private final static int TEXT_Y = -20;
+    private final static int TEXT_WIDTH = 120;
+    private final static int TEXT_HEIGHT = 20;
 
     private Paint mPaintRectangle;
     private Paint mPaintText;
@@ -49,14 +49,14 @@ public class ResultView extends View {
             mPaintRectangle.setStrokeWidth(5);
             mPaintRectangle.setStyle(Paint.Style.STROKE);
             canvas.drawRect(result.rect, mPaintRectangle);
-
+            // there may be drawn picture of tile
             Path mPath = new Path();
             RectF mRectF = new RectF(result.rect.left, result.rect.top, result.rect.left + TEXT_WIDTH,  result.rect.top + TEXT_HEIGHT);
-            mPath.addRect(mRectF, Path.Direction.CW);
-            mPaintText.setColor(Color.MAGENTA);
-            canvas.drawPath(mPath, mPaintText);
+            //mPath.addRect(mRectF, Path.Direction.CW);
+            //mPaintText.setColor(Color.MAGENTA);
+            //canvas.drawPath(mPath, mPaintText);
 
-            mPaintText.setColor(Color.WHITE);
+            mPaintText.setColor(Color.BLACK);
             mPaintText.setStrokeWidth(0);
             mPaintText.setStyle(Paint.Style.FILL);
             mPaintText.setTextSize(32);
