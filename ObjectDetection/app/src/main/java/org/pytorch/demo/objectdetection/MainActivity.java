@@ -20,7 +20,12 @@ import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.media.Image;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -30,6 +35,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import org.pytorch.IValue;
 import org.pytorch.LiteModuleLoader;
@@ -41,7 +47,8 @@ import org.pytorch.demo.objectdetection.R;
 import org.pytorch.demo.objectdetection.ResultView;
 import org.pytorch.torchvision.TensorImageUtils;
 
- import java.util.Date;
+import java.io.FileWriter;
+import java.util.Date;
 import java.text.SimpleDateFormat;
 import java.io.BufferedReader;
 import java.io.File;
@@ -68,6 +75,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
     private ImageView mImageView;
     private ResultView mResultView;
     private Button mButtonDetect;
+    private Button mButtonSave;
     private ProgressBar mProgressBar;
     private Bitmap mBitmap = null;
     private Module mModule = null;
@@ -112,6 +120,19 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         Uri contentUri = Uri.fromFile(f);
         mediaScanIntent.setData(contentUri);
         this.sendBroadcast(mediaScanIntent);
+    }
+
+    private Bitmap viewToImage(View view) {
+        Bitmap returnedBitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(returnedBitmap);
+        Drawable bgDrawable = view.getBackground();
+        if (bgDrawable != null)
+            bgDrawable.draw(canvas);
+        else
+            canvas.drawColor(Color.WHITE);
+        view.draw(canvas);
+
+        return returnedBitmap;
     }
 
     private void dispatchTakePictureIntent() {
@@ -251,10 +272,21 @@ public class MainActivity extends AppCompatActivity implements Runnable {
 // DETECT button
         mButtonDetect.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                callDetection();
+                dispatchTakePictureIntent();
             }
         });
 
+        mButtonSave   = findViewById(R.id.saveButton);
+
+// SAVE button
+        mButtonSave.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+               //Bitmap imageBitmap = viewToImage(mResultView);
+                //BitmapDrawable drawable = (BitmapDrawable) mResultView.();
+                //Bitmap imageBitmap = drawable.getBitmap();
+                //MediaStore.Images.Media.insertImage(getContentResolver(), imageBitmap, "yourTitle" , "yourDescription");
+            }
+        });
         try {
             mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "best.torchscript.ptl"));
             BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open("classes.txt")));
@@ -276,6 +308,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_CANCELED) {
             switch (requestCode) {
+                // take photo & detect
                 case 0:
                     if (resultCode == RESULT_OK && data != null) {
                         mBitmap = BitmapFactory.decodeFile(mCurrentPhotoPath);
@@ -289,6 +322,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
                         callDetection();
                     }
                     break;
+                // just choose photo
                 case 1:
                     if (resultCode == RESULT_OK && data != null) {
                         Uri selectedImage = data.getData();
@@ -323,6 +357,7 @@ public class MainActivity extends AppCompatActivity implements Runnable {
         IValue[] outputTuple = mModule.forward(IValue.from(inputTensor)).toTuple();
         final Tensor outputTensor = outputTuple[0].toTensor();
         final float[] outputs = outputTensor.getDataAsFloatArray();
+        PrePostProcessor.SetImageSize(mImageView.getDrawable().getIntrinsicHeight(), mImageView.getDrawable().getIntrinsicWidth());
         final ArrayList<Result> results =  PrePostProcessor.outputsToNMSPredictions(outputs, mImgScaleX, mImgScaleY, mIvScaleX, mIvScaleY, mStartX, mStartY);
 
         runOnUiThread(() -> {

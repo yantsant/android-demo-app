@@ -35,6 +35,9 @@ public class PrePostProcessor {
     static int mInputWidth = 640;
     static int mInputHeight = 640;
 
+    private static int mImageInputWidth = 0;
+    private static int mInputImageHeight = 0;
+
     // model output is of size 25200*(num_of_class+5)
     private static int mOutputRow = 25200; // as decided by the YOLOv5 model for input image of size 640*640
     private static int mOutputColumn = 43; // left, top, right, bottom, score and 80 class probability
@@ -43,6 +46,10 @@ public class PrePostProcessor {
 
     static String[] mClasses;
 
+    public static void SetImageSize(int height, int width){
+        mImageInputWidth = width;
+        mInputImageHeight = height;
+    }
     // The two methods nonMaxSuppression and IOU below are ported from https://github.com/hollance/YOLO-CoreML-MPSNNGraph/blob/master/Common/Helpers.swift
     /**
      Removes bounding boxes that overlap too much with other boxes that have
@@ -147,6 +154,22 @@ public class PrePostProcessor {
         }
         return nonMaxSuppression(results, mNmsLimit, mThreshold);
     }
+    static ArrayList<String> ArrayResultToStrings(ArrayList<Result> results){
+        ArrayList<String> strings = new ArrayList<String>();
+        for (Result res : results){
 
+            double h = 1.0*res.rect.height()/mInputImageHeight;
+            double w = 1.0*res.rect.width()/mImageInputWidth;
+            double x = 0.5*(res.rect.left+res.rect.right)/mInputImageHeight;
+            double y = 0.5*(res.rect.top+res.rect.bottom)/mImageInputWidth;
+            String newString = Integer.toString(res.classIndex-1) + " " +
+                    Double.toString(x) + " " +
+                    Double.toString(y) + " " +
+                    Double.toString(h) + " " +
+                    Double.toString(w) + "\n";
+            strings.add(newString);
+        }
+        return strings;
+    }
 
 }
